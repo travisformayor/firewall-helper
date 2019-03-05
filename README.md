@@ -2,6 +2,24 @@
 
 Tool for mass adding accepted ips/hosts, and applying other rules and managment for vpn support in the QubesOS firewall. This is simply a wrapper for automating certain vm-firewall commands. The -f [file] flag takes a file with a different ip/host on each line, and mass adds them as accepted. The -a [actions] flag handles other tasks.
 
+## Syntax
+> ./fhelper -h
+Usage: ./fhelper -flag []
+  -h Help. Displays usage info.
+  -q [vm name] Pick the qube to work on.
+  -f [filename] File with list of ips on newlines.
+  -c [comment] Firewall rule comment text for imported ips.
+  -v Verbose. Lists all the ip's as they are added.
+  -a [action] dns | icmp | drop | clear | fix
+    dns: Adds 'accept dns' rule to bottom.
+    icmp: Adds 'drop icmp' rule to bottom.
+    drop: Adds 'drop everything else' rule to bottom.
+    reset: Deletes all added rules, resets to default 'accept all' rule.
+
+    ### Important Note ###
+    Rules should be ordered: accepted ips -> accept dns -> drop icmp -> drop all else
+    Check your rules with 'qvm-firewall <qube> list'
+
 ## Example
 Only allow connection to a set of VPN servers.In this example you have a text file 'vpn.txt' which contains a bunch of ip addresses for vpn servers you want to allow connection to, each one on a newline.
 
