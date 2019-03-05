@@ -1,0 +1,122 @@
+#!/bin/bash
+#
+##############
+# Tool for mass adding accepted ips/hosts, and applying other  
+# rules and managment for vpn support in the QubesOS firewall.
+# This is simply a wrapper for automating certain vm-firewall commands.
+# The -f [file] flag takes a file with a different ip/host on each line,
+# and mass adds them as accepted. The -a [actions] flag handles other tasks.
+##############
+
+# init
+qube=''
+file=''
+comment=''
+action=''
+verbose='false'
+num_of_lines=''
+num_of_rules=''
+
+print_usage() { # Print usage info
+  printf "Usage: ${0} -flag []
+  -h Help. Displays usage info.
+  -q [vm name] Pick the qube to work on.
+  -f [filename] File with list of ips on newlines.
+  -c [comment] Firewall rule comment text for imported ips.
+  -v Verbose. Lists all the ip's as they are added.
+  -a [action] dns | icmp | drop | clear | fix
+    dns: Adds 'accept dns' rule to bottom.
+    icmp: Adds 'drop icmp' rule to bottom.
+    drop: Adds 'drop everything else' rule to bottom.
+    reset: Deletes all added rules, resets to default 'accept all' rule.
+    
+    ### Important Note ### 
+    Rules should be ordered: accepted ips -> accept dns -> drop icmp -> drop all else
+    Check your rules with 'qvm-firewall <qube> list'\n"
+}
+
+# Check any flags are present
+# -z: string is empty (no flags), or first arg doesn't start with "-"
+if [[ -z "${1}" || "${1}" != -[A-Za-z]* ]]; then 
+  printf "Usage: missing required flags. Check -h\n"
+  exit 1
+fi
+
+# parse the flags
+while getopts 'q:f:c:va:h' flag; do # ':' means option takes an  argument
+  case "${flag}" in
+    q) qube="${OPTARG}" ;;
+    f) file="${OPTARG}" ;;
+    c) comment="${OPTARG}" ;;
+    v) verbose='true' ;;
+    a) action="${OPTARG}" ;;
+    h|*) print_usage
+      exit 1 ;;
+  esac
+done
+
+# Check command is not doing both -f and -a commands
+if [[ -n "${file}" && -n "${action}" ]]; then # Both file and action are not empty
+  printf "Use -f to add rules OR -a to perform preset actions, not both at the same time.\n"
+  exit 1
+fi
+
+# Check if a qube was set
+# The -h command doesn't need -q, but if -h was selected the program already exited anyway
+if [[ -z "${qube}" ]]; then # -z: string is empty
+  printf "Don't forget to set what qube you're working on with -q [vm name]\n"
+  exit 1
+fi
+
+# Mass adding rules, based on file. Needs qube, comment text is optional
+if [[ -n "${file}" ]]; then # -n: string is not empty
+  #num_of_lines="$( wc -l "${file}" | awk '{print($1)}' )"
+  num_of_lines="$( cat ${file} | wc -l )"
+  if [[ "${num_of_lines}" == "0" ]]; then
+    printf "File is empty or invalid\n"
+    exit 1
+  fi
+  printf "Number of lines in file to add: ${num_of_lines}\n"
+  for (( i = 1; i <= "${num_of_lines}"; i++ )); do
+    ip=$( sed -n "$i{p;q}" "${file}" ) # Pick out one line of the file at a time
+    if [[ "${verbose}" == "true" ]]; then # Checks for -v flag to show all the added lines
+      printf "Adding ${ip}\n"
+    fi
+    qvm-firewall "${qube}" add action=accept dsthost="${ip}" comment="${comment}"
+  done
+  printf "Done!\nCheck rules with 'qvm-firewall ${qube} list'\n"
+  exit 0
+fi
+
+# Perform a selected action
+if [[ -n "${action}" ]]; then # -n: string is not empty
+  case "${action}" in
+    "dns")
+      qvm-firewall "${qube}" add action=accept specialtarget=dns
+      printf "'Allow DNS' rule added. Check with qvm-firewall ${qube} list\n"
+      exit 0 ;;
+    "icmp")
+      qvm-firewall "${qube}" add action=drop proto=icmp      
+      printf "'Drop icmp' rule added. Check with qvm-firewall ${qube} list\n"
+      exit 0 ;;
+    "drop") 
+      qvm-firewall "${qube}" add action=drop
+      printf "'Drop everything else' rule added. Check with qvm-firewall ${qube} list\n"
+      exit 0 ;;
+    "reset")
+      # How many lines of output/number of rules?
+      num_of_rules="$( qvm-firewall ${qube} list | wc -l )"
+      let num_of_rules-=1 # minus the top header line
+      printf "Result: ${num_of_rules} rule(s) deleting... "      
+      while [[ "${num_of_rules}" -gt 0 ]]; do # -gt: greater than
+        qvm-firewall "${qube}" del --rule-no=0
+        let num_of_rules-=1
+      done
+      printf "deleted.\n"
+      printf "Default 'accept all' added. "
+      printf "Reload qubes manager to get gui firewall control back.\n"
+      qvm-firewall "${qube}" add action=accept
+      exit 0 ;;
+    *) printf "Invalid action. Check -h\n" ;;
+  esac
+fi
